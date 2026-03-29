@@ -59,7 +59,7 @@
 #include <trac_fw_io.hpp>
 
 namespace {
-// ADC configuration
+// Hardware Interface Constants
 constexpr uint8_t ADC_CH = 0;
 constexpr uint8_t OUT_REG_FREQ = 3;
 
@@ -91,7 +91,7 @@ int main() {
 
         // Fixed-rate sampling loop
         if (now_ms - last_sample_ms >= SAMPLE_RATE_MS) {
-            last_sample_ms = now_ms;
+            last_sample_ms += SAMPLE_RATE_MS;
 
             const uint32_t raw_val = io.analog_read(ADC_CH);
 

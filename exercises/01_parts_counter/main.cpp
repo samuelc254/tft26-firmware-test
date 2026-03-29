@@ -18,40 +18,40 @@
 // -----------------------------------------------------------------------------
 //
 //  1. Empirical Telemetry Analysis & FSM Debounce:
-//     The debounce strategy was not arbitrarily guessed. Telemetry data from 
+//     The debounce strategy was not arbitrarily guessed. Telemetry data from
 //     the simulator (edge timestamps) was extracted and plotted via Python/Pandas.
 //     The data revealed two critical physical behaviors:
-//       a) A part can occlude the sensor for a highly variable amount of time, 
-//          sometimes passing extremely fast (pulses as short as ~2 ms).
-//       b) However, there is always a consistent physical gap (LOW state) 
+//       a) A part can occlude the sensor for a highly variable amount of time,
+//          sometimes passing extremely fast (pulses as short as ~1 ms).
+//       b) However, there is always a consistent physical gap (LOW state)
 //          between parts.
-//     
+//
 //     Based on this, an asymmetric Finite State Machine (FSM) was implemented:
-//     - MIN_VALID_PULSE_MS (2 ms): Validates the rising edge, keeping the system 
+//     - MIN_VALID_PULSE_MS (1 ms): Validates the rising edge, keeping the system
 //       responsive enough to catch very fast-moving parts.
-//     - MIN_LOW_STABLE_MS (120 ms): Acts as a strict "Delay OFF" filter. Once a 
-//       part is counted, the sensor must remain physically clear (LOW) for at 
+//     - MIN_LOW_STABLE_MS (120 ms): Acts as a strict "Delay OFF" filter. Once a
+//       part is counted, the sensor must remain physically clear (LOW) for at
 //       least 120 ms. This completely rejects any mechanical bounce or vibration
 //       that might otherwise cause a single part to be double-counted.
 //
 //  2. Interrupt-Driven & Non-Blocking Design:
-//     To comply with constraints against busy-waiting (e.g., delay()), the sensor 
-//     is monitored via a hardware interrupt (InterruptMode::CHANGE). 
-//     The ISR acts as an O(1) state machine, capturing timestamps (io.millis()) 
+//     To comply with constraints against busy-waiting (e.g., delay()), the sensor
+//     is monitored via a hardware interrupt (InterruptMode::CHANGE).
+//     The ISR acts as an O(1) state machine, capturing timestamps (io.millis())
 //     to measure pulse widths without blocking the CPU.
 //
 //  3. Thread Safety & Memory Model:
-//     Because the part count is mutated in the ISR context and read in the main() 
-//     superloop, std::atomic<uint32_t> is used to prevent race conditions and 
-//     tearing. std::memory_order_relaxed is intentionally applied since we only 
-//     need atomicity for the increment itself, avoiding unnecessary memory barrier 
-//     overhead. State variables are declared static within the lambda to strictly 
+//     Because the part count is mutated in the ISR context and read in the main()
+//     superloop, std::atomic<uint32_t> is used to prevent race conditions and
+//     tearing. std::memory_order_relaxed is intentionally applied since we only
+//     need atomicity for the increment itself, avoiding unnecessary memory barrier
+//     overhead. State variables are declared static within the lambda to strictly
 //     encapsulate the FSM and prevent global scope pollution.
 //
 //  4. I/O Optimization:
-//     The main loop handles the display updates. To avoid bus saturation, 
-//     the display is only updated when the count changes, OR periodically 
-//     (DISPLAY_UPDATE_INTERVAL_MS = 500 ms) to keep the simulated connection 
+//     The main loop handles the display updates. To avoid bus saturation,
+//     the display is only updated when the count changes, OR periodically
+//     (DISPLAY_UPDATE_INTERVAL_MS = 500 ms) to keep the simulated connection
 //     alive and responsive.
 // =============================================================================
 
@@ -62,40 +62,40 @@
 #include <trac_fw_io.hpp>
 
 namespace {
-    // -------------------------------------------------------------------------
-    // Physical Parameters & Configuration
-    // -------------------------------------------------------------------------
-    
-    // Time windows validated via telemetry data:
-    // Minimum HIGH pulse width to accept a part.
-    // Kept small enough for close/fast parts while filtering spikes.
-    constexpr uint32_t MIN_VALID_PULSE_MS = 2;
-    
-    // Minimum time sensor must remain LOW after a valid count
-    // to prevent double-counting noisy or vibrating parts.
-    constexpr uint32_t MIN_LOW_STABLE_MS = 120;
-    
-    // Update display at most every defined interval to keep the connection 
-    // responsive while avoiding excessive I/O bus overhead.
-    constexpr uint32_t DISPLAY_UPDATE_INTERVAL_MS = 500;
+// -------------------------------------------------------------------------
+// Physical Parameters & Configuration
+// -------------------------------------------------------------------------
 
-    constexpr uint8_t SENSOR_PORT = 0;
-    constexpr uint8_t DISPLAY_REG_START = 6;
-    constexpr uint8_t DISPLAY_REG_END = 7;
+// Time windows validated via telemetry data:
+// Minimum HIGH pulse width to accept a part.
+// Kept small enough for close/fast parts while filtering spikes.
+constexpr uint32_t MIN_VALID_PULSE_MS = 1;
 
-    // Formats and outputs the count to the LCD display via the defined register interface.
-    void update_display(trac_fw_io_t& io, uint32_t count) {
-        char buf[9] = {};
-        std::snprintf(buf, sizeof(buf), "%8u", count);
+// Minimum time sensor must remain LOW after a valid count
+// to prevent double-counting noisy or vibrating parts.
+constexpr uint32_t MIN_LOW_STABLE_MS = 120;
 
-        uint32_t r1, r2;
-        std::memcpy(&r1, buf + 0, 4);
-        std::memcpy(&r2, buf + 4, 4);
+// Update display at most every defined interval to keep the connection
+// responsive while avoiding excessive I/O bus overhead.
+constexpr uint32_t DISPLAY_UPDATE_INTERVAL_MS = 500;
 
-        io.write_reg(DISPLAY_REG_START, r1);
-        io.write_reg(DISPLAY_REG_END, r2);
-    }
-} // anonymous namespace
+constexpr uint8_t SENSOR_PORT = 0;
+constexpr uint8_t DISPLAY_REG_START = 6;
+constexpr uint8_t DISPLAY_REG_END = 7;
+
+// Formats and outputs the count to the LCD display via the defined register interface.
+void update_display(trac_fw_io_t& io, uint32_t count) {
+    char buf[9] = {};
+    std::snprintf(buf, sizeof(buf), "%8u", count);
+
+    uint32_t r1, r2;
+    std::memcpy(&r1, buf + 0, 4);
+    std::memcpy(&r2, buf + 4, 4);
+
+    io.write_reg(DISPLAY_REG_START, r1);
+    io.write_reg(DISPLAY_REG_END, r2);
+}
+}  // anonymous namespace
 
 int main() {
     trac_fw_io_t io;
@@ -156,18 +156,17 @@ int main() {
                 
                 in_pulse = false;
             }
-        }
-    }, InterruptMode::CHANGE);
+        } }, InterruptMode::CHANGE);
 
     // Ensure the display shows the initial count (0) immediately on startup.
     update_display(io, 0);
 
     while (true) {
-        uint32_t current_time = io.millis();
-        uint32_t current_count = count.load(std::memory_order_relaxed);
+        const uint32_t current_time = io.millis();
+        const uint32_t current_count = count.load(std::memory_order_relaxed);
 
-        bool keep_display_on = (current_time - last_display_update) >= DISPLAY_UPDATE_INTERVAL_MS;
-        
+        const bool keep_display_on = (current_time - last_display_update) >= DISPLAY_UPDATE_INTERVAL_MS;
+
         if (keep_display_on || current_count != last_count) {
             update_display(io, current_count);
             last_count = current_count;
